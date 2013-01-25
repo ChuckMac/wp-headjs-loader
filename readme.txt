@@ -6,7 +6,7 @@ Requires at least: 3.0
 Tested up to: 3.5.1
 Stable tag: trunk
 
-A plugin to load your Javascript files via Head JS.  
+A WordPress plugin to load your Javascript files via Head JS.  
 
 == Description ==
 
@@ -47,6 +47,8 @@ head.js("http://yoururl.com/wp-includes/js/prototype.js?ver=1.6.1",
 );
 </script> 
 </code></pre>
+
+Feel free to contribue to the project on <a href="http://github.com/ChuckMac/wp-headjs-loader">GitHub</a>!
 
 == Installation ==
 
