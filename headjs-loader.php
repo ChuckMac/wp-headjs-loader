@@ -3,7 +3,7 @@
 Plugin Name: Head JS Loader
 Plugin URI: http://wordpress.org/extend/plugins/headjs-loader/
 Description: A plugin to load <a href="http://headjs.com" target="_BLANK">Head JS</a> in Wordpress.
-Version: 0.2
+Version: 0.2.5
 Author: ChuckMac
 Author URI: http://www.chuckmac.info
 Text Domain: headjs-loader
@@ -24,6 +24,8 @@ class headJS_loader {
 	var $pluginName      = 'headJS_loader';
 	var $headJSVersion   = '0.99';
 	var $scriptsUsed     = array();
+	var $adminOptions    = array();
+	var $ignoreScripts   = array();
 
 	/**
 	 * Initializes the plugin
@@ -37,8 +39,16 @@ class headJS_loader {
 	 */
 	function headJS_init() {
 		
+		/* Grab our setup vars to use throughout */
+		$this->adminOptions = $this->headjs_admin_options();
+		
 		/* No need to run on admin / rss / xmlrpc */
 		if (!is_admin() && !is_feed() && !defined('XMLRPC_REQUEST')) {
+			/* Setup our array of scripts to ignore */
+			$this->adminOptions['headjs_ignore'] = str_replace("\r\n","\n", $this->adminOptions['headjs_ignore']);
+			$this->ignoreScripts = explode("\n", $this->adminOptions['headjs_ignore']);
+			
+			/* Add the rest of our actions to filter the frontend */
 			add_action('init', array($this, 'headjs_pre_content'), 99998);
 			add_action('wp_print_scripts', array($this, 'headjs_inspect_scripts'));
 			add_action('wp_footer', array($this, 'headjs_post_content'));
@@ -59,11 +69,14 @@ class headJS_loader {
 			$scripts = $wp_scripts->queue;
 			$wp_scripts->all_deps( $scripts );	
 			$headjs_queue = $wp_scripts->to_do;	
-			
+					
 			foreach( $headjs_queue as $handle ) {
-				$this->scriptsUsed[$handle] = $wp_scripts->registered[$handle]->src;
-				wp_deregister_script($handle);
-				wp_dequeue_script($handle);
+				/* check if script should be ignored */
+				if(!in_array( $wp_scripts->registered[$handle]->src, $this->ignoreScripts )) { 
+					$this->scriptsUsed[$handle] = $wp_scripts->registered[$handle]->src;
+					wp_deregister_script($handle);
+					wp_dequeue_script($handle);
+				}
 			}
 		}
 	}
@@ -86,39 +99,42 @@ class headJS_loader {
 	 */
 	function headjs_modify_buffer($buffer) {
 	
-		/* Get the options set from the admin page */
-		$headjsOptions = $this->headjs_admin_options();
-	
 		$script_array = array();
+		
 		/* Look for any script tags in the buffer */
-		preg_match_all('/<script([^>]*?)>(.*)<\/script>/i', $buffer, $script_tags_match);
+		preg_match_all('/<script([^>]*?)>(.*)<\/script>/Uis', $buffer, $script_tags_match);
 		
 		if (!empty($script_tags_match[0])) {
-			foreach ($script_tags_match[0] as $script_tag) {
+			foreach ($script_tags_match[0] as $script_tag) {		
+					preg_match_all('/<script([^>]*?)>(.*)<\/script>/i', $buffer, $script_tags_match);
 				if (strpos(strtolower($script_tag), 'text/javascript') !== false) {
 					/* Pull out any scripts that are not enqueued properly */
 					preg_match('/<script([^>]*?)src=[\'"]([^\'"]+)([^>]*?)>/', $script_tag, $src_match);
-					if (!empty ($src_match[1])) {
-						/* Remove the script tags */
-						$buffer = str_replace($script_tag, '', $buffer);
-						/* Save the script location */
-						$script_array[] = $src_match[1];
-					} elseif ($headjsOptions['wrap_inline_js'] == 'true') {
+					if (!empty ($src_match[2])) {
+						if (!in_array( $src_match[2], $this->ignoreScripts)) {
+							/* Remove the script tags */
+							$buffer = str_replace($script_tag, '', $buffer);
+							/* Save the script location */
+							$script_array[] = $src_match[2];
+						}
+					} elseif ($this->adminOptions['wrap_inline_js'] == 'true') {
 						/* Add head.ready function to inline javascript */
-						$buffer = preg_replace('/<script([^>]*?)>/', "<script$1>\nhead.ready(function (){\n", $buffer);
-						$buffer = str_replace('</script>', "\n}); // end head.ready\n</script>", $buffer);
+						$new_js = preg_replace('/<script([^>]*?)>/', "<script$1>\nhead.ready(function (){\n", $script_tag);
+						$new_js = str_replace('</script>', "\n}); // end head.ready\n</script>", $new_js);
+						$buffer = str_replace($script_tag, $new_js, $buffer);
 					}
-				} elseif ($headjsOptions['wrap_inline_js'] == 'true') {
+				} elseif ($this->adminOptions['wrap_inline_js'] == 'true') {
 					/* Add head.ready function to inline javascript */
-					$buffer = preg_replace('/<script([^>]*?)>/', "<script$1>\nhead.ready(function (){\n", $buffer);
-					$buffer = str_replace('</script>', "\n}); // end head.ready\n</script>", $buffer);
+					$new_js = preg_replace('/<script([^>]*?)>/', "<script$1>\nhead.ready(function (){\n", $script_tag);
+					$new_js = str_replace('</script>', "\n}); // end head.ready\n</script>", $new_js);
+					$buffer = str_replace($script_tag, $new_js, $buffer);
 				}
 			}
 		}
 	
 		/* Sort out the Head JS */
 		$headJSfile = $this->headjs_location();
-		$headJS = '<script type="text/javascript" src="' . $headJSfile . '"></script>';
+		$headJS = '<script type=\'text/javascript\' src=\'' . $headJSfile . '\'></script>';
 		
 		$i=0;
 		$js_files = '';
@@ -145,24 +161,23 @@ class headJS_loader {
 		
 		/* Wrap what we want to load in script tag / head.js function */
 		if ((!empty($script_array)) || (!empty($this->scriptsUsed))) {
-			$headJSqueue = "\n<script type=\"text/javascript\">\nhead.js(\n    " . $js_files . "\n);\n</script>";
+			$headJSqueue = "\n<script type='text/javascript'>\nhead.js(\n    " . $js_files . "\n);\n</script>";
 		}
 		
 		/* Load HeadJS depending on the options settings */
-		if ($headjsOptions['headjs_location'] == 'start_head') {
+		if ($this->adminOptions['headjs_location'] == 'start_head') {
 			$buffer = preg_replace('/<head([^>]*?)>/', "<head$1>\n$headJS\n", $buffer);
-		} elseif ($headjsOptions['headjs_location'] == 'after_title') {
+		} elseif ($this->adminOptions['headjs_location'] == 'after_title') {
 			$buffer = str_replace('</title>', "</title>\n" . $headJS, $buffer);
-		} elseif ($headjsOptions['headjs_location'] == 'before_head') {
+		} elseif ($this->adminOptions['headjs_location'] == 'before_head') {
 			$buffer = str_replace('</head>', $headJS . "\n</head>", $buffer);
-		} elseif ($headjsOptions['headjs_location'] == 'in_footer') {
+		} elseif ($this->adminOptions['headjs_location'] == 'in_footer') {
 			$buffer = str_replace('</body>', $headJS . "\n</body>", $buffer);
 		}
-
 		
 		/* Write HeadJS queue before the end of head */
 		$buffer = str_replace('</head>', $headJSqueue . "\n</head>", $buffer);
-		
+
 		return $buffer;
 	}
 	
@@ -180,7 +195,6 @@ class headJS_loader {
 	 * Return the location of the headJS file to use
 	 */
 	function headjs_location() {
-		$headjsOptions = $this->headjs_admin_options();
 		$headJSLocations = array(
 							'cdn_headjs' => '//cdnjs.cloudflare.com/ajax/libs/headjs/0.99/head.min.js',
 							'local_headjs' => plugins_url('/js/head.min.js', __FILE__ ),
@@ -188,9 +202,9 @@ class headJS_loader {
 							'local_headjs_core' => plugins_url('/js/head.core.min.js', __FILE__ ),
 							'cdn_headjs_asset' => '//cdnjs.cloudflare.com/ajax/libs/headjs/0.99/head.load.min.js',
 							'local_headjs_asset' => plugins_url('/js/head.load.min.js', __FILE__ ),
-							'custom_headjs' => $headjsOptions['custom_location']
+							'custom_headjs' => $this->adminOptions['custom_location']
 							);
-		return $headJSLocations[$headjsOptions['headjs_type']];
+		return $headJSLocations[$this->adminOptions['headjs_type']];
 	}
 	
 	/**
@@ -205,7 +219,7 @@ class headJS_loader {
 	*/
 	function headjs_admin_panel() {
 		$headjsUpdated = $this->headjs_admin_update_options();
-		$headjsOptions = $this->headjs_admin_options();
+		//$this->adminOptions = $this->headjs_admin_options();
 		$headjsTypes = array(
 						'cdn_headjs' => __('CDN HeadJS (<a href="http://cdnjs.com/" target="_BLANK">Cloudflare</a>)', $this->pluginName),
 						'local_headjs' => __('Local HeadJS', $this->pluginName),
@@ -239,38 +253,41 @@ class headJS_loader {
 			<p><?php _e('For more information on the different versions of HeadJS please visit their homepage at', $this->pluginName) ?> <a href="http://headjs.com" target="_BLANK" title="HeadJS">http://headjs.com</a></p>
 			<h3><?php _e('Select the headJS file you would like to use:', $this->pluginName) ?></h3>
 			<?php foreach ($headjsTypes as $id => $value) { ?>
-				<p><input type="radio" name="headjs_type" id="<?php echo $id; ?>" value="<?php echo $id; ?>" <?php if ($headjsOptions['headjs_type'] == $id) { echo 'checked="checked" '; }?>/>
+				<p><input type="radio" name="headjs_type" id="<?php echo $id; ?>" value="<?php echo $id; ?>" <?php if ($this->adminOptions['headjs_type'] == $id) { echo 'checked="checked" '; }?>/>
 				<label for="<?php echo $id; ?>"><?php echo $value; ?></label></p>
 			<?php } ?>
 			<div id="head_js_custom_location">
 			<label for="custom_location"><?php _e('Custom Location URL', $this->pluginName) ?> : </label>
-			<input type="text" name="custom_location" id="custom_location" value="<?php echo $headjsOptions['custom_location'];?>" />
+			<input type="text" name="custom_location" id="custom_location" value="<?php echo $this->adminOptions['custom_location'];?>" />
 			</div>
 			<br />
 			<h3><?php _e('Other Options:', $this->pluginName) ?></h3>
 			<p>
-			<input type="checkbox" name="wrap_inline_js" id="wrap_inline_js" value="true" <?php if ($headjsOptions['wrap_inline_js'] == 'true') { echo 'checked="checked" '; }?>/>
+			<input type="checkbox" name="wrap_inline_js" id="wrap_inline_js" value="true" <?php if ($this->adminOptions['wrap_inline_js'] == 'true') { echo 'checked="checked" '; }?>/>
 			<label for="wrap_inline_js"><?php _e('Wrap inline javascript with head.ready function', $this->pluginName) ?></label>
 			</p>
 			<p>
 			<select name="headjs_location" id="headjs_location">
-				<option value="start_head"<?php if ($headjsOptions['headjs_location'] == 'start_head') { echo ' selected'; }?>>
+				<option value="start_head"<?php if ($this->adminOptions['headjs_location'] == 'start_head') { echo ' selected'; }?>>
 					<?php _e('After &lt;head&gt; tag', $this->pluginName) ?>
 				</option>
-				<option value="after_title"<?php if ($headjsOptions['headjs_location'] == 'after_title') { echo ' selected'; }?>>
+				<option value="after_title"<?php if ($this->adminOptions['headjs_location'] == 'after_title') { echo ' selected'; }?>>
 					<?php _e('After &lt;/title&gt; tag', $this->pluginName) ?>
 				</option>
-				<option value="before_head"<?php if ($headjsOptions['headjs_location'] == 'before_head') { echo ' selected'; }?>>
+				<option value="before_head"<?php if ($this->adminOptions['headjs_location'] == 'before_head') { echo ' selected'; }?>>
 					<?php _e('Before &lt;/head&gt; tag', $this->pluginName) ?>
 				</option>
-				<option value="in_footer"<?php if ($headjsOptions['headjs_location'] == 'in_footer') { echo ' selected'; }?>>
+				<option value="in_footer"<?php if ($this->adminOptions['headjs_location'] == 'in_footer') { echo ' selected'; }?>>
 					<?php _e('Before &lt;/body&gt; tag', $this->pluginName) ?>
 				</option>
 			</select>
 			<label for="headjs_location"><?php _e('Where to place HeadJS script', $this->pluginName) ?></label>
-
-			 </p>
-			<div class="submit"><input type="submit" name="update_headjsSettings" value="<?php _e('Update Settings', $this->pluginName) ?>" /></div>
+			</p>
+   		    <p>
+			<label for="headjs_ignore" style="vertical-align: top;"><?php _e('JS Files to ignore:', $this->pluginName) ?></label>
+			<textarea name="headjs_ignore" id="headjs_ignore" cols="60" rows="5"><?php echo $this->adminOptions['headjs_ignore']; ?></textarea>
+			</p>
+			<div class="submit"><input type="submit" class="button-primary" name="update_headjsSettings" value="<?php _e('Update Settings', $this->pluginName) ?>" /></div>
 			</form>	
 		</div>
 		<?php		
@@ -284,11 +301,13 @@ class headJS_loader {
 			'headjs_type' => 'cdn_headjs',
 			'custom_location' => 'http://',
 			'wrap_inline_js' => 'true',
-			'headjs_location' => 'start_head'
+			'headjs_location' => 'start_head',
+			'headjs_ignore' => ''
+
 			);
-		$headjsOptions = get_option($this->pluginName);
-		if (!empty($headjsOptions)) {
-			foreach ($headjsOptions as $key => $option)
+		$this->adminOptions = get_option($this->pluginName);
+		if (!empty($this->adminOptions)) {
+			foreach ($this->adminOptions as $key => $option)
 				$headjsAdminOptions[$key] = $option;
 		}				
 		update_option($this->pluginName, $headjsAdminOptions);
@@ -303,23 +322,27 @@ class headJS_loader {
 
 		/* If form is submitted, update options */
 		
+
+		
 		if (isset($_POST['update_headjsSettings'])) {
-		 	$currentOptions = $this->headjs_admin_options();
 			if (isset($_POST['headjs_type'])) {
-				$currentOptions['headjs_type'] = $_POST['headjs_type'];
+				$this->adminOptions['headjs_type'] = $_POST['headjs_type'];
 			}  
 			if (isset($_POST['custom_location'])) {
-				$currentOptions['custom_location'] = apply_filters('content_save_pre', $_POST['custom_location']);
+				$this->adminOptions['custom_location'] = apply_filters('content_save_pre', $_POST['custom_location']);
 			}  
 			if (isset($_POST['wrap_inline_js'])) {
-				$currentOptions['wrap_inline_js'] = $_POST['wrap_inline_js'];
+				$this->adminOptions['wrap_inline_js'] = $_POST['wrap_inline_js'];
 			} else {
-				$currentOptions['wrap_inline_js'] = false;
+				$this->adminOptions['wrap_inline_js'] = false;
 			}
 			if (isset($_POST['headjs_location'])) {
-				$currentOptions['headjs_location'] = $_POST['headjs_location'];
-			}  
-			update_option($this->pluginName, $currentOptions);
+				$this->adminOptions['headjs_location'] = $_POST['headjs_location'];
+			}
+			if (isset($_POST['headjs_ignore'])) {
+				$this->adminOptions['headjs_ignore'] = $_POST['headjs_ignore'];
+			}
+			update_option($this->pluginName, $this->adminOptions);
 			$return = '<div class="updated"><p><strong>' . __("Settings Updated.", $this->pluginName) . '</strong></p></div>';
 		}
 		
@@ -350,3 +373,6 @@ class headJS_loader {
 if (class_exists('headJS_loader')) {
   $headJS_loader = new headJS_loader();
 }
+
+
+?>

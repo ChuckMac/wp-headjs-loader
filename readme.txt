@@ -65,6 +65,9 @@ No answers.
 
 == Upgrade Notice ==
 
+= 0.2.5 = 
+ * added new option to exclude js files from head.js
+
 = 0.2 =
 Major rework!
 * Updated to head.js 0.99
@@ -75,6 +78,15 @@ Major rework!
 Fixed bug that caused apache erorr messages if no javascript was declared.
 
 == Changelog ==
+
+= 0.2.5 = 
+ * added new option to exclude js files from head.js
+
+= 0.2 =
+Major rework!
+* Updated to head.js 0.99
+* Added admin options page so you can chose which version to load
+* Allow inline javascript to be wrapped in head.ready calls
 
 = 0.1.1 =
 * Fixed bug that caused apache erorr messages if no javascript was declared.
