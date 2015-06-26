@@ -202,8 +202,17 @@ class headJS_loader {
 		}		
 		
 		/* Wrap what we want to load in script tag / head.load function */
-		if ((!empty($script_array)) || (!empty($this->scriptsUsed))) {
+		if ( (!empty($script_array)) || (!empty($this->scriptsUsed)) || (!empty($this->stylesUsed)) ) {
 			$headJSqueue = "\n<script type='text/javascript'>\nhead.load(\n    " . $css_files . $js_files . "\n);\n</script>";
+		}
+
+		/* Use noscript tags for css incase someone doesn't have js enabled */
+		if ( !empty($this->stylesUsed) ) {
+			$headJSqueue .= "\n<noscript>\n";
+			foreach ($this->stylesUsed as $style_name => $style_location) {
+				$headJSqueue .= "<link rel='stylesheet' id='$style_name'  href='$style_location' type='text/css' media='all' />\n";
+			}
+			$headJSqueue .= "</noscript>\n";
 		}
 		
 		/* Load HeadJS depending on the options settings */
