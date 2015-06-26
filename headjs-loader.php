@@ -3,9 +3,9 @@
 Plugin Name: Head JS Loader
 Plugin URI: http://wordpress.org/extend/plugins/headjs-loader/
 Description: A plugin to load <a href="http://headjs.com" target="_BLANK">Head JS</a> in Wordpress.
-Version: 0.2.5
+Version: 0.3
 Author: ChuckMac
-Author URI: http://www.chuckmac.info
+Author URI: https://www.chuckmac.info
 Text Domain: headjs-loader
 */
 
@@ -22,10 +22,12 @@ if (!class_exists('headJS_loader')) {
  */
 class headJS_loader {
 	var $pluginName      = 'headJS_loader';
-	var $headJSVersion   = '0.99';
+	var $headJSVersion   = '1.03';
 	var $scriptsUsed     = array();
+	var $stylesUsed      = array();
 	var $adminOptions    = array();
 	var $ignoreScripts   = array();
+	var $ignoreStyles    = array();
 
 	/**
 	 * Initializes the plugin
@@ -47,10 +49,15 @@ class headJS_loader {
 			/* Setup our array of scripts to ignore */
 			$this->adminOptions['headjs_ignore'] = str_replace("\r\n","\n", $this->adminOptions['headjs_ignore']);
 			$this->ignoreScripts = explode("\n", $this->adminOptions['headjs_ignore']);
+
+			/* Setup our array of styles to ignore */
+			$this->adminOptions['headjs_css_ignore'] = str_replace("\r\n","\n", $this->adminOptions['headjs_css_ignore']);
+			$this->ignoreStyles = explode("\n", $this->adminOptions['headjs_css_ignore']);
 			
 			/* Add the rest of our actions to filter the frontend */
 			add_action('init', array($this, 'headjs_pre_content'), 99998);
 			add_action('wp_print_scripts', array($this, 'headjs_inspect_scripts'));
+			add_action('wp_print_styles', array($this, 'headjs_inspect_styles'));
 			add_action('wp_footer', array($this, 'headjs_post_content'));
 		}
 		/* Load the admin menu */
@@ -61,7 +68,7 @@ class headJS_loader {
 	}
 	
 	/**
-	 *  Check what is enqueued properly, grab the source, then deenqueue it
+	 *  Check what scripts are enqueued properly, grab the source, then deenqueue it
 	 */
 	function headjs_inspect_scripts() {
 		global $wp_scripts;
@@ -71,11 +78,33 @@ class headJS_loader {
 			$headjs_queue = $wp_scripts->to_do;	
 					
 			foreach( $headjs_queue as $handle ) {
+
 				/* check if script should be ignored */
 				if(!in_array( $wp_scripts->registered[$handle]->src, $this->ignoreScripts )) { 
 					$this->scriptsUsed[$handle] = $wp_scripts->registered[$handle]->src;
 					wp_deregister_script($handle);
 					wp_dequeue_script($handle);
+				}
+			}
+		}
+	}
+
+	/**
+	 *  Check what styles are enqueued properly, grab the source, then deenqueue it
+	 */
+	function headjs_inspect_styles() {
+		global $wp_styles;
+
+
+		if(!empty($wp_styles)) {
+			$wp_styles->all_deps( $wp_styles->queue );
+			foreach($wp_styles->to_do as $handle){
+
+				/* check if script should be ignored */
+				if(!in_array( $wp_styles->registered[$handle]->src, $this->ignoreStyles )) { 
+					$this->stylesUsed[$handle] = $wp_styles->registered[$handle]->src;
+					wp_deregister_style($handle);
+					wp_dequeue_style($handle);
 				}
 			}
 		}
@@ -137,6 +166,19 @@ class headJS_loader {
 		$headJS = '<script type=\'text/javascript\' src=\'' . $headJSfile . '\'></script>';
 		
 		$i=0;
+
+		$css_files = '';
+		/* Load the enqueued styles */
+		if (!empty($this->stylesUsed)) {
+			foreach ($this->stylesUsed as $style_name => $style_location) {
+				if ($i != 0) { $css_files .= ",\n    "; }
+				$css_files .= '"' . $style_location . '"';
+				/* Loading with names was not working in dev environment, possibly fix this later */
+				//$css_files .= '{'. $style_name . ': "' . $style_location . '"}';
+				$i++;
+			}
+		}
+
 		$js_files = '';
 		/* Load the enqueued scripts */
 		if (!empty($this->scriptsUsed)) {
@@ -148,7 +190,7 @@ class headJS_loader {
 				$i++;
 			}
 		}
-		
+
 		/* Load the other scraped scripts */
 		if (!empty($script_array)) {
 			$script_array = array_unique($script_array);
@@ -159,9 +201,9 @@ class headJS_loader {
 			}
 		}		
 		
-		/* Wrap what we want to load in script tag / head.js function */
+		/* Wrap what we want to load in script tag / head.load function */
 		if ((!empty($script_array)) || (!empty($this->scriptsUsed))) {
-			$headJSqueue = "\n<script type='text/javascript'>\nhead.js(\n    " . $js_files . "\n);\n</script>";
+			$headJSqueue = "\n<script type='text/javascript'>\nhead.load(\n    " . $css_files . $js_files . "\n);\n</script>";
 		}
 		
 		/* Load HeadJS depending on the options settings */
@@ -196,11 +238,11 @@ class headJS_loader {
 	 */
 	function headjs_location() {
 		$headJSLocations = array(
-							'cdn_headjs' => '//cdnjs.cloudflare.com/ajax/libs/headjs/0.99/head.min.js',
+							'cdn_headjs' => '//cdnjs.cloudflare.com/ajax/libs/headjs/1.0.3/head.min.js',
 							'local_headjs' => plugins_url('/js/head.min.js', __FILE__ ),
-							'cdn_headjs_core' => '//cdnjs.cloudflare.com/ajax/libs/headjs/0.99/head.core.min.js',
+							'cdn_headjs_core' => '//cdnjs.cloudflare.com/ajax/libs/headjs/1.0.3/head.core.min.js',
 							'local_headjs_core' => plugins_url('/js/head.core.min.js', __FILE__ ),
-							'cdn_headjs_asset' => '//cdnjs.cloudflare.com/ajax/libs/headjs/0.99/head.load.min.js',
+							'cdn_headjs_asset' => 'http://cdnjs.cloudflare.com/ajax/libs/headjs/1.0.3/head.load.min.js',
 							'local_headjs_asset' => plugins_url('/js/head.load.min.js', __FILE__ ),
 							'custom_headjs' => $this->adminOptions['custom_location']
 							);
@@ -287,6 +329,10 @@ class headJS_loader {
 			<label for="headjs_ignore" style="vertical-align: top;"><?php _e('JS Files to ignore:', $this->pluginName) ?></label>
 			<textarea name="headjs_ignore" id="headjs_ignore" cols="60" rows="5"><?php echo $this->adminOptions['headjs_ignore']; ?></textarea>
 			</p>
+			  <p>
+			<label for="headjs_css_ignore" style="vertical-align: top;"><?php _e('CSS Files to ignore:', $this->pluginName) ?></label>
+			<textarea name="headjs_css_ignore" id="headjs_css_ignore" cols="60" rows="5"><?php echo $this->adminOptions['headjs_css_ignore']; ?></textarea>
+			</p>
 			<div class="submit"><input type="submit" class="button-primary" name="update_headjsSettings" value="<?php _e('Update Settings', $this->pluginName) ?>" /></div>
 			</form>	
 		</div>
@@ -302,7 +348,8 @@ class headJS_loader {
 			'custom_location' => 'http://',
 			'wrap_inline_js' => 'true',
 			'headjs_location' => 'start_head',
-			'headjs_ignore' => ''
+			'headjs_ignore' => '',
+			'headjs_css_ignore' => ''
 
 			);
 		$this->adminOptions = get_option($this->pluginName);
@@ -321,9 +368,7 @@ class headJS_loader {
 		$return = '';
 
 		/* If form is submitted, update options */
-		
 
-		
 		if (isset($_POST['update_headjsSettings'])) {
 			if (isset($_POST['headjs_type'])) {
 				$this->adminOptions['headjs_type'] = $_POST['headjs_type'];
@@ -341,6 +386,9 @@ class headJS_loader {
 			}
 			if (isset($_POST['headjs_ignore'])) {
 				$this->adminOptions['headjs_ignore'] = $_POST['headjs_ignore'];
+			}
+			if (isset($_POST['headjs_css_ignore'])) {
+				$this->adminOptions['headjs_css_ignore'] = $_POST['headjs_css_ignore'];
 			}
 			update_option($this->pluginName, $this->adminOptions);
 			$return = '<div class="updated"><p><strong>' . __("Settings Updated.", $this->pluginName) . '</strong></p></div>';

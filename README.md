@@ -2,11 +2,11 @@
 Contributors: durin
 Donate link: http://chuckmac.info/
 Tags: javascript, js, css
-Requires at least: 3.0
-Tested up to: 3.5.1
+Requires at least: 3.8
+Tested up to: 4.2.2
 Stable tag: trunk
 
-A WordPress plugin to load your Javascript files via Head JS.  
+A WordPress plugin to load your Javascript and CSS files via Head JS.  
 
 == Description ==
 
@@ -37,7 +37,7 @@ Becomes:
 ```js+php
 <script type="text/javascript" src="http://yoururl.com/wp-content/plugins/headjs-loader/js/head.min.js"></script> 
 <script> 
-head.js("http://yoururl.com/wp-includes/js/prototype.js?ver=1.6.1",
+head.load("http://yoururl.com/wp-includes/js/prototype.js?ver=1.6.1",
     "http://ajax.googleapis.com/ajax/libs/jquery/1.4/jquery.min.js?ver=3.0.4",
     "http://yoururl.com/wp-includes/js/scriptaculous/wp-scriptaculous.js?ver=1.8.3",
     "http://yoururl.com/wp-includes/js/scriptaculous/builder.js?ver=1.8.3",
@@ -66,6 +66,10 @@ No answers.
 
 == Upgrade Notice ==
 
+= 0.3 = 
+ * Enhancement: Updated to head.js 1.03
+ * Enhancement: Loading CSS now supported (only when properly enqueued)
+
 = 0.2.5 = 
  * added new option to exclude js files from head.js
 
@@ -79,6 +83,10 @@ Major rework!
 Fixed bug that caused apache erorr messages if no javascript was declared.
 
 == Changelog ==
+
+= 0.3 = 
+ * Enhancement: Updated to head.js 1.03
+ * Enhancement: Loading CSS now supported (only when properly enqueued)
 
 = 0.2.5 = 
  * added new option to exclude js files from head.js
